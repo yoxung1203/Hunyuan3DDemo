@@ -8,7 +8,7 @@ public class Hunyuan3DDemo : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" ,"HTTP","Json", "JsonUtilities", "Sockets", "EditorInteractiveToolsFramework"});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 
