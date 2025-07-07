@@ -116,19 +116,16 @@ void AHunyuan3DActor::CheckServerStatus()
 
 void AHunyuan3DActor::SubmitTextTo3DTask(const FString& Prompt)
 {
-    // 记录开始时间
     StartTime = FDateTime::Now();
     
     FHttpModule& HttpModule = FHttpModule::Get();
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = HttpModule.CreateRequest();
     
-    // 设置API请求
     Request->SetURL(TEXT("http://hunyuanapi.woa.com/openapi/v1/3d/generations/submission"));
     Request->SetVerb(TEXT("POST"));
     Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
     Request->SetHeader(TEXT("Authorization"), FString::Printf(TEXT("Bearer %s"), *API_KEY));
     
-    // 构建JSON请求体
     TSharedPtr<FJsonObject> RequestObj = MakeShareable(new FJsonObject);
     RequestObj->SetStringField(TEXT("model"), TEXT("hunyuan-3d-dit-v2.5"));
     RequestObj->SetStringField(TEXT("prompt"), Prompt);
@@ -165,7 +162,7 @@ void AHunyuan3DActor::HandleSubmissionResponse(FHttpRequestPtr Request, FHttpRes
     }*/
     
     // 处理502错误
-    if (Response.IsValid() && Response->GetResponseCode() == 502)
+    /*if (Response.IsValid() && Response->GetResponseCode() == 502)
     {
         int32& RetryCount = RetryCountMap.FindOrAdd(RequestURL, 0);
         
@@ -190,7 +187,7 @@ void AHunyuan3DActor::HandleSubmissionResponse(FHttpRequestPtr Request, FHttpRes
             UE_LOG(LogTemp, Error, TEXT("502错误 - 已达到最大重试次数"));
             RetryCountMap.Remove(RequestURL);
         }
-    }
+    }*/
     
     if (bSuccess && Response.IsValid() && EHttpResponseCodes::IsOk(Response->GetResponseCode()))
     {
@@ -235,23 +232,18 @@ void AHunyuan3DActor::QueryTaskResult()
 
 void AHunyuan3DActor::DownloadAllAssets(const TSharedPtr<FJsonObject>& Data)
 {
-    // 获取所有格式的URL
     FString GLBUrl, OBJUrl, GIFUrl;
     Data->TryGetStringField(TEXT("glb_url"), GLBUrl);
     Data->TryGetStringField(TEXT("obj_url"), OBJUrl);
     Data->TryGetStringField(TEXT("gif_url"), GIFUrl);
     
-    // 生成基础文件名（使用任务ID或时间戳）
     FString BaseName = FString::Printf(TEXT("asset_%s"), *FGuid::NewGuid().ToString());
-    
-    // 初始化下载计数器
+   
     TotalDownloads = 0;
     CompletedDownloads = 0;
-    
-    // 准备下载列表
+   
     TArray<TPair<FString, FString>> DownloadList;
     
-    // 确定哪些格式可用并添加到下载列表
     if (!GLBUrl.IsEmpty())
     {
         DownloadList.Add(TPair<FString, FString>(GLBUrl, BaseName + TEXT(".glb")));
@@ -271,8 +263,7 @@ void AHunyuan3DActor::DownloadAllAssets(const TSharedPtr<FJsonObject>& Data)
     }
     
     UE_LOG(LogTemp, Display, TEXT("开始下载 %d 个资源"), TotalDownloads);
-    
-    // 开始下载所有资源
+
     for (const auto& DownloadItem : DownloadList)
     {
         DownloadAsset(DownloadItem.Key, DownloadItem.Value);
@@ -324,8 +315,7 @@ void AHunyuan3DActor::HandleResultQueryResponse(FHttpRequestPtr Request, FHttpRe
         UE_LOG(LogTemp, Error, TEXT("响应JSON解析失败"));
         return;
     }
-
-    // 获取任务状态
+    
     FString Status;
     if (!JsonObject->TryGetStringField(TEXT("status"), Status))
     {
@@ -334,14 +324,12 @@ void AHunyuan3DActor::HandleResultQueryResponse(FHttpRequestPtr Request, FHttpRe
     }
 
     FString ID;
-    JsonObject->TryGetStringField(TEXT("id"), ID); // 可选字段
+    JsonObject->TryGetStringField(TEXT("id"), ID);
 
-    // 处理不同状态
     if (Status.Equals(TEXT("succeeded"), ESearchCase::IgnoreCase))
     {
         UE_LOG(LogTemp, Display, TEXT("任务完成: %s"), *ID);
         
-        // 处理任务结果
         const TArray<TSharedPtr<FJsonValue>>* DataArray;
         if (JsonObject->TryGetArrayField(TEXT("data"), DataArray) && DataArray && DataArray->Num() > 0)
         {
@@ -371,18 +359,15 @@ void AHunyuan3DActor::HandleResultQueryResponse(FHttpRequestPtr Request, FHttpRe
     else if (Status.Equals(TEXT("queued"), ESearchCase::IgnoreCase) || 
              Status.Equals(TEXT("running"), ESearchCase::IgnoreCase))
     {
-        // 任务仍在处理中，稍后重试
         UE_LOG(LogTemp, Display, TEXT("任务处理中[%s]: %s"), *Status, *ID);
-        
-        // 计算重试延迟（智能延迟）
+       
         static TMap<FString, int> RetryCountMap;
         int& RetryCount = RetryCountMap.FindOrAdd(ID, 0);
         float RetryDelay = FMath::Min(120.0f, 0.5f + RetryCount * 0.5f);
         RetryCount++;
 
         UE_LOG(LogTemp, Display, TEXT("%.0f秒后重试查询"), RetryDelay);
-
-        // 设置重试定时器
+        
         FTimerDelegate TimerDel;
         TimerDel.BindUObject(this, &AHunyuan3DActor::QueryTaskResult);
         GetWorld()->GetTimerManager().SetTimer(TimerHandle, TimerDel, RetryDelay, false);
@@ -390,10 +375,8 @@ void AHunyuan3DActor::HandleResultQueryResponse(FHttpRequestPtr Request, FHttpRe
     else if (Status.Equals(TEXT("failed"), ESearchCase::IgnoreCase) || 
              Status.Equals(TEXT("cancelled"), ESearchCase::IgnoreCase))
     {
-        // 任务失败或取消
         UE_LOG(LogTemp, Error, TEXT("任务失败[%s]: %s"), *Status, *ID);
         
-        // 获取错误详情
         FString ErrorMessage = TEXT("未知错误");
         if (JsonObject->HasField(TEXT("error")))
         {
@@ -403,27 +386,12 @@ void AHunyuan3DActor::HandleResultQueryResponse(FHttpRequestPtr Request, FHttpRe
         
         UE_LOG(LogTemp, Error, TEXT("错误详情: %s"), *ErrorMessage);
         
-        // 清理重试计数器
         static TMap<FString, int> RetryCountMap;
         RetryCountMap.Remove(ID);
     }
     else if (Status.Equals(TEXT("unknown"), ESearchCase::IgnoreCase))
     {
-        // 未知状态
         UE_LOG(LogTemp, Warning, TEXT("任务未知状态: %s"), *ID);
-        
-        // 尝试恢复
-        /*if (GWorld)
-        {
-            FTimerHandle TimerHandle;
-            GWorld->GetTimerManager().SetTimer(TimerHandle, [TaskID]() {
-                QueryTaskResult(TaskID);
-            }, 10.0f, false);
-        }*/
-    }
-    else
-    {
-        UE_LOG(LogTemp, Warning, TEXT("未知任务状态: %s"), *Status);
     }
 }
 
@@ -467,7 +435,6 @@ void AHunyuan3DActor::HandleAssetDownload(
             FPlatformFileManager::Get().GetPlatformFile().CreateDirectoryTree(*Directory);
         }
         
-        // 保存文件
         TArray<uint8> Content = Response->GetContent();
         if (FFileHelper::SaveArrayToFile(Content, *FilePath))
         {
@@ -494,24 +461,6 @@ void AHunyuan3DActor::HandleAssetDownload(
         }
         
         UE_LOG(LogTemp, Error, TEXT("资源下载失败: %s"), *ErrorMsg);
-        
-        // 可选：添加重试逻辑
-        /*static TMap<FString, int> RetryCountMap;
-        int& RetryCount = RetryCountMap.FindOrAdd(FilePath, 0);
-        
-        if (RetryCount < 3)
-        {
-            RetryCount++;
-            UE_LOG(LogTemp, Warning, TEXT("10秒后重试下载 (%d/3)"), RetryCount);
-            
-            FTimerHandle TimerHandle;
-            if (GWorld)
-            {
-                GWorld->GetTimerManager().SetTimer(TimerHandle, [Url = Request->GetURL(), FilePath]() {
-                    DownloadAsset(Url, FPaths::GetCleanFilename(FilePath));
-                }, 10.0f, false);
-            }
-        }*/
     }
 
     OnSingleAssetDownloaded(bSuccess);
@@ -530,7 +479,6 @@ void AHunyuan3DActor::OnSingleAssetDownloaded(bool bSuccess)
         UE_LOG(LogTemp, Error, TEXT("资源下载失败 (%d/%d)"), CompletedDownloads, TotalDownloads);
     }
     
-    // 检查是否所有下载都完成
     if (CompletedDownloads >= TotalDownloads)
     {
         OnAllDownloadsCompleted();
@@ -550,10 +498,8 @@ void AHunyuan3DActor::OnAllDownloadsCompleted()
     // 打开资源文件夹
     FString AbsolutePath = FPaths::ConvertRelativePathToFull(SAVE_PATH);
     
-    // 确保路径使用正确的斜杠
     AbsolutePath.ReplaceInline(TEXT("/"), TEXT("\\"), ESearchCase::CaseSensitive);
     
-    // 在Windows上打开资源管理器
     FString PlatformPath = FString::Printf(TEXT("\"%s\""), *AbsolutePath);
     FPlatformProcess::ExploreFolder(*PlatformPath);
     
